@@ -9,7 +9,7 @@ class CommandConnect(object):
 		self.commandChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.commandChannel.connect((domain, 21))
 
-		# A message is sent by the server
+		# A message is sent by the server at session opening
 		self.getResponse()
 
 		# Authentication
@@ -68,17 +68,44 @@ class CommandConnect(object):
 		dataTransfer.openTCP()
 
 		# A response from the server is expected after data channel opening
-		self.getResponse()
+		# In the case of RETR, the response may contain file size in bytes
+		response = self.getResponse()
 
 		# Actual data transfer, from client to server or the other way
 		if dataToSend:
 			dataTransfer.sendData(dataToSend)
 			
 		else:
-			dataTransfer.receiveData()
+			size = self.getSize(response)
+			dataTransfer.receiveData(size)
 
-		# Data channel is closed
+		# Closing data channel
 		dataTransfer.closeTCP()
+
+		self.getResponse()
+
+		return response
+
+	def getSize(self, response):
+		"""
+		Returns the size of a file in bytes contained in response of type :
+		"150 Opening BINARY mode data connection for download of file.ext (xxxx bytes)"
+		"""
+
+		try:
+			# Finding text inside parenthesis
+			parenthesis = response[response.find("(")+1 : response.find(")")]
+
+		# In case size is not specified by server
+		except IndexError:
+			size = -1
+
+		else:
+			size = int(parenthesis.split(" ")[0])
+
+		print("# File size : {}".format(size))
+
+		return size
 
 
 	def prepareTransfer(self):
@@ -95,6 +122,10 @@ class CommandConnect(object):
 
 		return dataTransfer
 
+	def quit(self):
+		self.commandChannel.close()
+
+
 class DataTransfer(object):
 	def __init__(self, parentChannel):
 		"""
@@ -102,20 +133,35 @@ class DataTransfer(object):
 		# Reference to parent of type 'CommandConnect' used to send requests on command channel
 		self.parentChannel = parentChannel
 
-	def sendData(self):
-		"""
-		"""
-		pass
 
-	def receiveData(self):
+	def sendData(self, bytesArray):
 		"""
 		"""
+		# String must be converted to Byte for TCP transfer
+		self.dataChannel.send(bytesArray)
 
-		response = self.dataChannel.recv(1024)
 
-		print(response)
+	def receiveData(self, fileSize):
+		"""
+		"""
+		currentSize = 0 # Number of bytes received so far
+		response = b"" # Data recevied so far
+
+		# Data is received by chunk of 4096 bytes
+		while True:
+			response += self.dataChannel.recv(4096)
+			currentSize += 4096
+
+			# Loop breaks when all the bytes have been received
+			if currentSize >= fileSize:
+				break
+
+		print("# Last bytes : ")
+		print(response[-100:])
+		print("# Response wize : " + str(len(response)))
 
 		return response
+
 
 class PassiveTransfer(DataTransfer):
 	def prepareTCP(self):
@@ -134,6 +180,7 @@ class PassiveTransfer(DataTransfer):
 		self.domain = ".".join(params[0:4])
 		self.port = int(params[4]) * 256 + int(params[5])
 
+
 	def openTCP(self):
 		"""
 		"""
@@ -141,17 +188,24 @@ class PassiveTransfer(DataTransfer):
 		self.dataChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.dataChannel.connect((self.domain, self.port))
 
+
 	def closeTCP(self):
 		"""
 		"""
 		self.dataChannel.close()
 
+
 class ActiveTransfer(DataTransfer):
 	def prepareTCP(self):
 		"""
 		"""
+		self.dataChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.dataChannel.bind((''))
 
+		self.domain = "127,0,0,1"
+		self.port = self.dataChannel.getsockname()[1]
 
+		self.parentChannel.sendRequest("PORT {},{},{}".format(self.domain, self.port / 256, self.port % 256))
 
 	def openTCP(self):
 		"""
@@ -169,5 +223,7 @@ class FileSystemEntity(object):
 		self.size = size # size in bytes
 		self.isDirectory = isDirectory # True if directory // False if file
 
+
 c = CommandConnect("127.0.0.1", "ftp-user", "ftp-pass")
-c.transfer("RETR download.png", "I")
+c.transfer("RETR tp9.pdf", "I")
+c.quit()
