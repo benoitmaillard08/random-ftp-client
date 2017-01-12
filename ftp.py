@@ -1,5 +1,10 @@
 import socket
 
+ACTIVE = False
+PASSIVE = True
+BINARY = "I"
+ASCII = "A"
+
 class CommandConnect(object):
 	def __init__(self, domain, user, password):
 		"""
@@ -55,11 +60,11 @@ class CommandConnect(object):
 	def transfer(self, request, type, dataToSend=""):
 		"""
 		"""
-		# Preparing data TCP channel (like port number) for passive or active mode
-		dataTransfer = self.prepareTransfer()
-
 		# Setting type
 		self.sendRequest("TYPE " + type)
+
+		# Preparing data TCP channel (like port number) for passive or active mode
+		dataTransfer = self.prepareTransfer()
 
 		# Response argument must be False because the response is not expected right after the request
 		self.sendRequest(request, False)
@@ -92,18 +97,18 @@ class CommandConnect(object):
 		"150 Opening BINARY mode data connection for download of file.ext (xxxx bytes)"
 		"""
 
-		try:
-			# Finding text inside parenthesis
-			parenthesis = response[response.find("(")+1 : response.find(")")]
+		# Finding text inside parenthesis
+		p1 = response.find("(")
+		p2 = response.find(")")
 
-		# In case size is not specified by server
-		except IndexError:
-			size = -1
-
-		else:
+		if p1 >= 0:
+			parenthesis = response[p1+1 : p2]
 			size = int(parenthesis.split(" ")[0])
 
-		print("# File size : {}".format(size))
+		else:
+			size = -1
+
+		print("# Expected size : {}".format(size))
 
 		return size
 
@@ -123,7 +128,20 @@ class CommandConnect(object):
 		return dataTransfer
 
 	def quit(self):
+		"""
+		"""
 		self.commandChannel.close()
+
+	def setMode(self, mode):
+		"""
+		mode = False for Active Mode
+		mode = True for Passive Mode
+		"""
+		if mode:
+			self.passiveMode = True
+
+		else:
+			self.passiveMode = False
 
 
 class DataTransfer(object):
@@ -156,9 +174,7 @@ class DataTransfer(object):
 			if currentSize >= fileSize:
 				break
 
-		print("# Last bytes : ")
-		print(response[-100:])
-		print("# Response wize : " + str(len(response)))
+		print("# Response size : " + str(len(response)))
 
 		return response
 
@@ -188,6 +204,10 @@ class PassiveTransfer(DataTransfer):
 		self.dataChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.dataChannel.connect((self.domain, self.port))
 
+		# print("Passive data channel opened !")
+		# print("LOCAL PORT  : {}".format(self.dataChannel.laddr))
+		# print("SERVER PORT : {}".format(self.dataChannel.raddr))
+
 
 	def closeTCP(self):
 		"""
@@ -199,18 +219,38 @@ class ActiveTransfer(DataTransfer):
 	def prepareTCP(self):
 		"""
 		"""
-		self.dataChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.dataChannel.bind((''))
+		self.mainChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.mainChannel.bind(('', 0)) # 0 means OS chooses the port
 
 		self.domain = "127,0,0,1"
-		self.port = self.dataChannel.getsockname()[1]
+		# Port chosen by OS
+		self.port = self.mainChannel.getsockname()[1]
 
-		self.parentChannel.sendRequest("PORT {},{},{}".format(self.domain, self.port / 256, self.port % 256))
+		portString = "PORT {},{},{}".format(self.domain, self.port // 256, self.port % 256)
+		print("# Port request : " + portString)
+
+		self.parentChannel.sendRequest(portString)
+
 
 	def openTCP(self):
 		"""
 		"""
-		pass
+		self.mainChannel.listen(5)
+		# .accept returns a tuple
+		self.dataChannel, data = self.mainChannel.accept()
+
+		print(self.dataChannel)
+
+		# print("Active data channel opened !")
+		# print("LOCAL PORT  : {}".format(self.dataChannel.laddr))
+		# print("SERVER PORT : {}".format(self.dataChannel.raddr))
+
+
+	def closeTCP(self):
+		"""
+		"""
+		self.dataChannel.close()
+		self.mainChannel.close()
 
 
 class FileSystemEntity(object):
@@ -225,5 +265,14 @@ class FileSystemEntity(object):
 
 
 c = CommandConnect("127.0.0.1", "ftp-user", "ftp-pass")
-c.transfer("RETR tp9.pdf", "I")
+
+c.setMode(ACTIVE)
+c.transfer("RETR tp.pdf", BINARY)
+c.transfer("STOR test.txt", BINARY, b"abc"*100000)
+
+c.setMode(PASSIVE)
+c.transfer("RETR tp.pdf", BINARY)
+c.transfer("LIST", ASCII)
+c.transfer("STOR test.txt", BINARY, b"abc"*100000)
+
 c.quit()
