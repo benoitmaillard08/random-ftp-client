@@ -42,25 +42,27 @@ class CommandConnect(object):
 			return self.getResponse()
 
 
-	def getResponse(self, decode=True):
+	def getResponse(self):
 		"""
 		Returns the response from the server after a request
 		"""
 		response = self.commandChannel.recv(1024)
 
-		# Response is converted from Byte to String if needed
-		if decode:
-			response = response.decode()
+		response = response.decode()
 
 		print(response)
 
-		return response
+		# Status code and message are separated
+		status, message = response.split(" ", 1)
+
+		return status, message
 
 
 	def transfer(self, request, type, dataToSend=""):
 		"""
 		"""
 		# Setting type
+		print("TRANSFER #############################################")
 		self.sendRequest("TYPE " + type)
 
 		# Preparing data TCP channel (like port number) for passive or active mode
@@ -74,22 +76,29 @@ class CommandConnect(object):
 
 		# A response from the server is expected after data channel opening
 		# In the case of RETR, the response may contain file size in bytes
-		response = self.getResponse()
+		status, response = self.getResponse()
 
-		# Actual data transfer, from client to server or the other way
-		if dataToSend:
-			dataTransfer.sendData(dataToSend)
-			
+		# 150 --> server ready to receive/send file
+		if status == "150":
+			# Actual data transfer, from client to server or the other way
+			if dataToSend:
+				dataTransfer.sendData(dataToSend)
+				
+			else:
+				size = self.getSize(response)
+				dataTransfer.receiveData(size)
+
 		else:
-			size = self.getSize(response)
-			dataTransfer.receiveData(size)
+			print("# UNABLE TO START TRANSFER")
 
 		# Closing data channel
 		dataTransfer.closeTCP()
+		print("# Data connection closed")
 
-		self.getResponse()
+		if status == "150":
+			self.getResponse()
 
-		return response
+		print("END ##################################################")
 
 	def getSize(self, response):
 		"""
@@ -184,7 +193,7 @@ class PassiveTransfer(DataTransfer):
 		"""
 		"""
 		# Entering pasive mode
-		response = self.parentChannel.sendRequest("PASV")
+		response = self.parentChannel.sendRequest("PASV")[1]
 
 		# Finding text inside parenthesis
 		parenthesis = response[response.find("(")+1 : response.find(")")]
@@ -216,6 +225,7 @@ class PassiveTransfer(DataTransfer):
 
 
 class ActiveTransfer(DataTransfer):
+
 	def prepareTCP(self):
 		"""
 		"""
@@ -236,20 +246,25 @@ class ActiveTransfer(DataTransfer):
 		"""
 		"""
 		self.mainChannel.listen(5)
-		# .accept returns a tuple
-		self.dataChannel, data = self.mainChannel.accept()
-
-		print(self.dataChannel)
+		print("# Listening ...")
 
 		# print("Active data channel opened !")
 		# print("LOCAL PORT  : {}".format(self.dataChannel.laddr))
 		# print("SERVER PORT : {}".format(self.dataChannel.raddr))
 
+	def sendData(self, bytesArray):
+		"""
+		"""
+		self.dataChannel, data = self.mainChannel.accept()
+
+		DataTransfer.sendData(self, bytesArray)
+
+		self.dataChannel.close()
+
 
 	def closeTCP(self):
 		"""
 		"""
-		self.dataChannel.close()
 		self.mainChannel.close()
 
 
@@ -267,11 +282,11 @@ class FileSystemEntity(object):
 c = CommandConnect("127.0.0.1", "ftp-user", "ftp-pass")
 
 c.setMode(ACTIVE)
-c.transfer("RETR tp.pdf", BINARY)
+c.transfer("RETR tpx.pdf", BINARY)
 c.transfer("STOR test.txt", BINARY, b"abc"*100000)
 
 c.setMode(PASSIVE)
-c.transfer("RETR tp.pdf", BINARY)
+c.transfer("RETR tpx.pdf", BINARY)
 c.transfer("LIST", ASCII)
 c.transfer("STOR test.txt", BINARY, b"abc"*100000)
 
