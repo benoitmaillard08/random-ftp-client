@@ -68,6 +68,8 @@ class CommandConnect(object):
 		# Preparing data TCP channel (like port number) for passive or active mode
 		dataTransfer = self.prepareTransfer()
 
+		data = None
+
 		# Response argument must be False because the response is not expected right after the request
 		self.sendRequest(request, False)
 
@@ -86,7 +88,7 @@ class CommandConnect(object):
 				
 			else:
 				size = self.getSize(response)
-				dataTransfer.receiveData(size)
+				data = dataTransfer.receiveData(size)
 
 		else:
 			print("# UNABLE TO START TRANSFER")
@@ -99,6 +101,8 @@ class CommandConnect(object):
 			self.getResponse()
 
 		print("END ##################################################")
+
+		return data
 
 	def getSize(self, response):
 		"""
@@ -159,6 +163,7 @@ class DataTransfer(object):
 		"""
 		# Reference to parent of type 'CommandConnect' used to send requests on command channel
 		self.parentChannel = parentChannel
+		self.dataChannel = None
 
 
 	def sendData(self, bytesArray):
@@ -259,15 +264,26 @@ class ActiveTransfer(DataTransfer):
 
 		DataTransfer.sendData(self, bytesArray)
 
-		self.dataChannel.close()
+
+	def receiveData(self, size):
+		"""
+		"""
+		self.dataChannel, data = self.mainChannel.accept()
+
+		DataTransfer.receiveData(self, size)
 
 
 	def closeTCP(self):
 		"""
 		"""
+		# In case 
+		if self.dataChannel:
+			self.dataChannel.close()
+
 		self.mainChannel.close()
 
 
+# Move to --> interface.py
 class FileSystemEntity(object):
 	def __init__(self, name, permissions, modifDateTime, size, isDirectory):
 		"""
@@ -279,15 +295,32 @@ class FileSystemEntity(object):
 		self.isDirectory = isDirectory # True if directory // False if file
 
 
-c = CommandConnect("127.0.0.1", "ftp-user", "ftp-pass")
+# c = CommandConnect("127.0.0.1", "ftp-user", "ftp-pass")
 
-c.setMode(ACTIVE)
-c.transfer("RETR tpx.pdf", BINARY)
-c.transfer("STOR test.txt", BINARY, b"abc"*100000)
+# c.setMode(ACTIVE)
+# c.transfer("RETR tp.pdf", BINARY)
+# c.transfer("RETR tpx.pdf", BINARY)
+# c.transfer("STOR test.txt", BINARY, b"abc"*100000)
+# c.transfer("RETRR tpx.pdf", BINARY)
 
-c.setMode(PASSIVE)
-c.transfer("RETR tpx.pdf", BINARY)
-c.transfer("LIST", ASCII)
-c.transfer("STOR test.txt", BINARY, b"abc"*100000)
+# c.setMode(PASSIVE)
+# c.transfer("RETR tp.pdf", BINARY)
+# c.transfer("RETR tpx.pdf", BINARY)
+# c.transfer("LIST", ASCII)
+# c.transfer("STOR test.txt", BINARY, b"abc"*100000)
+# c.transfer("RETRR tpx.pdf", BINARY)
 
+# c.sendRequest("RNFR test.txt")
+# c.sendRequest("RNTO TO test2.txt")
+
+# c.sendRequest("MKD testdir")
+
+# c.sendRequest("RMD testdir")
+
+# c.transfer("LIST", ASCII)
+
+# c.quit()
+
+c = CommandConnect("185.28.188.151", "blm08.594891", "hynbedUdyem7")
+print(c.transfer("LIST", ASCII).decode())
 c.quit()
