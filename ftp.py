@@ -4,7 +4,7 @@ import os
 
 class FTPClient(object):
     def __init__(self, domain, port):
-        self.session = transfer.CommandConnect(domain, port)
+        self.session = transfer.FTPCommand(domain, port)
         self.passiveMode = transfer.PASSIVE
 
     def authenticate(self, user, password):

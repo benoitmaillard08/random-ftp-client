@@ -6,11 +6,8 @@ import getpass
 
 # explorer = ftp.FTPExplorer("127.")
 
-def getCallbackArg(commandName):
-	return (lambda session, argument: ftp.FTPClient.genericRequest(session, commandName, argument))
-
 def getCallback(commandName):
-	return (lambda session: ftp.FTPClient.genericRequest(session, commandName))
+	return (lambda session, argument="": ftp.FTPClient.genericRequest(session, commandName, argument))
 
 
 COMMANDS = {
@@ -19,15 +16,33 @@ COMMANDS = {
 	"stor" : ftp.FTPClient.upload,
 	"rnfr" : ftp.FTPClient.rename,
 	"togglemode" : ftp.FTPClient.toggleMode,
-	"cwd" : getCallbackArg("CWD"),
-	"dele" : getCallbackArg("DELE"),
-	"mkd" : getCallbackArg("MKD"),
-	"rmd" : getCallbackArg("RMD"),
+	"cwd" : getCallback("CWD"),
+	"dele" : getCallback("DELE"),
+	"mkd" : getCallback("MKD"),
+	"rmd" : getCallback("RMD"),
 	"pwd" : getCallback("PWD"),
 	"cdup" : getCallback("CDUP"),
 }
-
 ERROR_STRING = "Please use following syntax : <l / d>.<action>\nExample : d.list"
+HELP_STRING = """
+User inputs must use the following syntax : <l / d>.<action>
+Prefix "l." can be used to execute bash actions, while "d." is used for actual FTP actions
+
+Here is a list of FTP actions (commands with prefix "d.") :
+- list : list content of current directory
+- retr <file> : download a file from current directory
+- stor <file> : upload a file to current directory
+- renfr <oldname> <newname> : rename a file
+- togglemode : change mode from passive to active or active from passive (passive is default)
+- cwd <relative path> : change current directory
+- dele <file> : remove a file from current directory
+- mkd <directory> : create a directory
+- rmd <directory> : remove a directory
+- pwd : print path of current directory
+- cdup : change working directory to parent directory
+
+Enter "quit" (without prefix) to close the program
+"""
 
 class FTPCommandLine(object):
 	def __init__(self):
@@ -56,34 +71,38 @@ class FTPCommandLine(object):
 			response = self.session.authenticate(username, password)
 			self.authenticated = response[0] == "230"
 
-
+		print('Enter "help" to display user manual')
 		self.prompt()
 
 	def prompt(self):
 		userInput = input("ftp# ")
 
-		try:
-			location, instruction = userInput.split(".", 1)
+		if userInput == "help":
+			print(HELP_STRING)
 
-		# in case there was no "." or other character than "d" or "l" as location
-		except ValueError:
-			print(ERROR_STRING)
+		# quit instruction close the program immediately
+		elif userInput == "quit":
+			self.session.quit()
+			sys.exit(0)
 		else:
-			if location == "l":
-				# executing command as bash instruction
-				os.system(instruction)
-			elif location == "d":
-				self.distantAction(instruction)
-			else:
+			try:
+				location, instruction = userInput.split(".", 1)
+
+			# in case there was no "." or other character than "d" or "l" as location
+			except ValueError:
 				print(ERROR_STRING)
+			else:
+				if location == "l":
+					# executing command as bash instruction
+					os.system(instruction)
+				elif location == "d":
+					self.distantAction(instruction)
+				else:
+					print(ERROR_STRING)
 
 		self.prompt()
 
 	def distantAction(self, instruction):
-		# quit instruction close the program immediately
-		if instruction[0:4] == "quit":
-			self.session.quit()
-			sys.exit(0)
 
 		splitInstruction = instruction.split(" ")
 
@@ -104,9 +123,9 @@ class FTPCommandLine(object):
 			# calling chosen method with arguments
 			try:
 				response = commandMethod(self.session, *arguments)
-			except TypeError as t:
-				print(t)
+			except TypeError:
 				print("Wrong number of arguments for command {}".format(commandName))
-
+			except transfer.TransferException:
+				print("Unable to transfer data : check logs for more information")
 
 FTPCommandLine()

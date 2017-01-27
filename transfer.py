@@ -5,7 +5,7 @@ ASCII = "A"
 PASSIVE = True
 ACTIVE = False
 
-class CommandConnect(object):
+class FTPCommand(object):
     def __init__(self, domain, port):
         """
         Opens TCP COMMAND channel with server on port 21 and authenticates the user
@@ -53,6 +53,7 @@ class CommandConnect(object):
 
     def transfer(self, request, type, passiveMode=True, dataToSend=""):
         """
+        Opens data channel and sends / receives byte array
         """
         # Setting type
         self.sendRequest("TYPE " + type)
@@ -122,11 +123,12 @@ class CommandConnect(object):
 
     def quit(self):
         """
+        Closes command channel
         """
         self.commandChannel.close()
 
 
-class DataTransfer(object):
+class FTPData(object):
     def __init__(self, parentChannel):
         """
         """
@@ -137,6 +139,7 @@ class DataTransfer(object):
 
     def sendData(self, bytesArray):
         """
+        Send bytes array on data channel
         """
         # String must be converted to Byte for TCP transfer
         self.dataChannel.send(bytesArray)
@@ -144,6 +147,7 @@ class DataTransfer(object):
 
     def receiveData(self, fileSize):
         """
+        Receives bytes array on data channel
         """
         currentSize = 0 # Number of bytes received so far
         response = b"" # Data recevied so far
@@ -164,9 +168,10 @@ class DataTransfer(object):
         return response
 
 
-class PassiveTransfer(DataTransfer):
+class PassiveTransfer(FTPData):
     def prepareTCP(self):
         """
+        Prepares transfer in passive mode
         """
         # Entering pasive mode
         response = self.parentChannel.sendRequest("PASV")[1]
@@ -184,6 +189,7 @@ class PassiveTransfer(DataTransfer):
 
     def openTCP(self):
         """
+        Initialize data channel on port given by server
         """
         # Opening TCP channel on port specified by the server
         self.dataChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -191,14 +197,15 @@ class PassiveTransfer(DataTransfer):
 
     def closeTCP(self):
         """
+        Close data channel
         """
         self.dataChannel.close()
 
 
-class ActiveTransfer(DataTransfer):
-
+class ActiveTransfer(FTPData):
     def prepareTCP(self):
         """
+        Sends port information to server
         """
         self.mainChannel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.mainChannel.bind(('', 0)) # 0 means OS chooses the port
@@ -214,45 +221,37 @@ class ActiveTransfer(DataTransfer):
 
     def openTCP(self):
         """
+        Makes data channel ready to accepts connections
         """
         self.mainChannel.listen(5)
 
     def sendData(self, bytesArray):
         """
+        Accepts connection from server and sends bytes array
         """
         self.dataChannel, data = self.mainChannel.accept()
 
-        DataTransfer.sendData(self, bytesArray)
+        FTPData.sendData(self, bytesArray)
 
 
     def receiveData(self, size):
         """
+        Accepts connection from server and receives bytes array
         """
         self.dataChannel, data = self.mainChannel.accept()
 
-        return DataTransfer.receiveData(self, size)
+        return FTPData.receiveData(self, size)
 
 
     def closeTCP(self):
         """
+        Closes data channel
         """
-        # In case 
+        # In case there was an actual connection with server
         if self.dataChannel:
             self.dataChannel.close()
 
         self.mainChannel.close()
-
-
-# Move to --> interface.py
-class FileSystemEntity(object):
-    def __init__(self, name, permissions, modifDateTime, size, isDirectory):
-        """
-        """
-        self.name = name # name of file or folder
-        self.permissions = permissions # permissions string
-        self.modifDateTime = modifDateTime # date time of modification
-        self.size = size # size in bytes
-        self.isDirectory = isDirectory # True if directory // False if file
 
 class TransferException(Exception):
     def __init__(self, status, message, *args, **kwargs):
